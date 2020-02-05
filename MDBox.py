@@ -12,6 +12,7 @@ class MDBox:
     N_A = 6.02214076e23 # 1 / mol
     C12 = 9.847044e-6 #   kJ * nm^12 / mol
     C6 = 6.2647225e-3 #   kJ * nm^6 / mol
+    K_E = 138.9354576 #   kJ * nm / (mol * e^2)
     # units:
     # mass in:            g / mol
     # length in:          nm
@@ -20,6 +21,7 @@ class MDBox:
     # acceleration in:    nm / (ns^2)
     # force in:           nm / (ns^2) * g / mol = 10^(-6) * kJ / (nm * mol)
     # energy in:          kJ / mol
+    # charge in:          e = 1.602 * 10^(-19) C
     
     def __init__(self, xsize=50, ysize=50):
         """Initialize the rectangular box with the given size."""
@@ -28,7 +30,7 @@ class MDBox:
     
     # ========== Start: Initialize particles ==========
     
-    def temperature_particles(self, N=1, m=1, T=300, min_dist=(1/3)):
+    def temperature_particles(self, N=1, m=1, q=0, T=300, min_dist=(1/3)):
         """Delete all existing particles and randomly sample N new particles with velocities according to the Maxwell-Boltzmann statistics."""
         # initialize N particles
         self.N = N
@@ -55,6 +57,7 @@ class MDBox:
         self.xvel = vel * numpy.cos(angles)
         self.yvel = vel * numpy.sin(angles)
         self.m = numpy.ones(N) * m
+        self.q = numpy.ones(N) * q
     
     def newton_pendulum(self, N=5):
         """Delete all existing particles and sample a row of N particles to simulate a Newton pendulum."""
@@ -66,6 +69,7 @@ class MDBox:
         self.xvel[-1] = -10
         self.yvel = numpy.zeros(N)
         self.m = numpy.ones(N)
+        self.q = numpy.zeros(N)
     
     def load_particles(self, filename):
         """Delete all existing particles and load the given particle file."""
@@ -76,15 +80,17 @@ class MDBox:
         self.xvel = data[2]
         self.yvel = data[3]
         self.m = data[4]
+        self.q = data[5]
     
     def save_particles(self, filename):
         """Save the current particles to the given filename."""
-        data = numpy.zeros((5, self.N))
+        data = numpy.zeros((6, self.N))
         data[0] = self.xpos
         data[1] = self.ypos
         data[2] = self.xvel
         data[3] = self.yvel
         data[4] = self.m
+        data[5] = self.q
         numpy.save(filename, data)
     
     # ========== End: Initialize particles ==========
@@ -149,18 +155,30 @@ class MDBox:
         # set diagonal to inf (otherwise we get error messages upon division)
         numpy.fill_diagonal(dist_sq, numpy.inf)
         
+        # ===== Start: Lennard-Jones forces =====
         # calculate exponentials of distance
         dist_6 = dist_sq**3
         dist_8 = dist_6 * dist_sq
         dist_14 = dist_8 * dist_6
         
         # calculate force matrix
-        force_abs = (12 * MDBox.C12 * 1e6) / dist_14 - (6 * MDBox.C6 * 1e6) / dist_8
-        xforce = force_abs * xdist
-        yforce = force_abs * ydist
+        lennard_abs = (12 * MDBox.C12 * 1e6) / dist_14 - (6 * MDBox.C6 * 1e6) / dist_8
+        lennard_x = lennard_abs * xdist
+        lennard_y = lennard_abs * ydist
+        # ===== End: Lennard-Jones forces
+        
+        # ===== Start: Coulomb forces =====
+        # calculate matrix of charge products
+        charge_products = numpy.tile(self.q, (self.N, 1)) * numpy.tile(self.q, (self.N, 1)).T
+        
+        # calculate force matrix
+        coulomb_abs = MDBox.K_E * 1e6 * charge_products / (dist_sq**1.5)
+        coulomb_x = coulomb_abs * xdist
+        coulomb_y = coulomb_abs * ydist
+        # ===== End: Coulomb forces =====
         
         # sum up force matrix per particle and return
-        return (numpy.sum(xforce, axis=0), numpy.sum(yforce, axis=0))
+        return (numpy.sum(lennard_x + coulomb_x, axis=0), numpy.sum(lennard_y + coulomb_y, axis=0))
     
     def __calculate_acceleration(self):
         xforce, yforce = self.__calculate_force_vectors()
@@ -258,12 +276,24 @@ class MDBox:
         # set diagonal to inf (otherwise we get error messages upon division)
         numpy.fill_diagonal(dist_sq, numpy.inf)
         
+        # ===== Start: Lennard-Jones potential =====
+        # calculate exponentials of distance
         dist_6 = dist_sq**3
         dist_12 = dist_6**2
         
-        potential = MDBox.C12 / dist_12 - MDBox.C6 / dist_6
+        # calculate potential
+        lennard_pot = MDBox.C12 / dist_12 - MDBox.C6 / dist_6
+        # ===== End: Lennard-Jones potential
         
-        return 0.5 * numpy.sum(potential)
+        # ===== Start: Coulomb potential =====
+        # calculate matrix of charge products
+        charge_products = numpy.tile(self.q, (self.N, 1)) * numpy.tile(self.q, (self.N, 1)).T
+        
+        # calculate potential
+        coulomb_pot = MDBox.K_E * charge_products / numpy.sqrt(dist_sq)
+        # ===== End: Coulomb potential
+        
+        return 0.5 * numpy.sum(lennard_pot + coulomb_pot)
     
     # ========== End: SD Minimization ==========
     
