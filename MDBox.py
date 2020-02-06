@@ -13,6 +13,7 @@ class MDBox:
     C12 = 9.847044e-6 #   kJ * nm^12 / mol
     C6 = 6.2647225e-3 #   kJ * nm^6 / mol
     K_E = 138.9354576 #   kJ * nm / (mol * e^2)
+    K_R = 1e3 #           kJ / (nm^2 * mol)
     # units:
     # mass in:            g / mol
     # length in:          nm
@@ -27,6 +28,11 @@ class MDBox:
         """Initialize the rectangular box with the given size."""
         self.xsize = xsize
         self.ysize = ysize
+        
+        # initialize restraint distance and indices
+        self.r0 = numpy.inf
+        self.r1 = -1
+        self.r2 = -1
     
     # ========== Start: Initialize particles ==========
     
@@ -70,6 +76,12 @@ class MDBox:
         self.yvel = numpy.zeros(N)
         self.m = numpy.ones(N)
         self.q = numpy.zeros(N)
+    
+    def set_restraint(self, i, j, r0):
+        """Set the harmonic restraint potential with equilibrium distance r0 to apply to particle pair (i,j)."""
+        self.r0 = r0
+        self.r1 = i
+        self.r2 = j
     
     def load_particles(self, filename):
         """Delete all existing particles and load the given particle file."""
@@ -163,9 +175,9 @@ class MDBox:
         
         # calculate force matrix
         lennard_abs = (12 * MDBox.C12 * 1e6) / dist_14 - (6 * MDBox.C6 * 1e6) / dist_8
-        lennard_x = lennard_abs * xdist
-        lennard_y = lennard_abs * ydist
-        # ===== End: Lennard-Jones forces
+        force_x = lennard_abs * xdist
+        force_y = lennard_abs * ydist
+        # ===== End: Lennard-Jones forces =====
         
         # ===== Start: Coulomb forces =====
         # calculate matrix of charge products
@@ -173,12 +185,22 @@ class MDBox:
         
         # calculate force matrix
         coulomb_abs = MDBox.K_E * 1e6 * charge_products / (dist_sq**1.5)
-        coulomb_x = coulomb_abs * xdist
-        coulomb_y = coulomb_abs * ydist
+        force_x += coulomb_abs * xdist
+        force_y += coulomb_abs * ydist
         # ===== End: Coulomb forces =====
         
+        # ===== Start: Restraint force =====
+        if self.r1 >= 0 and self.r2 >= 0 and self.r0 < numpy.inf:
+            restraint_dist = numpy.sqrt(dist_sq[self.r1, self.r2])
+            restraint_abs = -MDBox.K_R * 1e6 * (restraint_dist - self.r0) / restraint_dist
+            force_x[self.r1, self.r2] += restraint_abs * xdist[self.r1, self.r2]
+            force_x[self.r2, self.r1] += restraint_abs * xdist[self.r2, self.r1]
+            force_y[self.r1, self.r2] += restraint_abs * ydist[self.r1, self.r2]
+            force_y[self.r2, self.r1] += restraint_abs * ydist[self.r2, self.r1]
+        # ===== End: Restraint force =====
+        
         # sum up force matrix per particle and return
-        return (numpy.sum(lennard_x + coulomb_x, axis=0), numpy.sum(lennard_y + coulomb_y, axis=0))
+        return (numpy.sum(force_x, axis=0), numpy.sum(force_y, axis=0))
     
     def __calculate_acceleration(self):
         xforce, yforce = self.__calculate_force_vectors()
@@ -282,18 +304,26 @@ class MDBox:
         dist_12 = dist_6**2
         
         # calculate potential
-        lennard_pot = MDBox.C12 / dist_12 - MDBox.C6 / dist_6
-        # ===== End: Lennard-Jones potential
+        potential = MDBox.C12 / dist_12 - MDBox.C6 / dist_6
+        # ===== End: Lennard-Jones potential =====
         
         # ===== Start: Coulomb potential =====
         # calculate matrix of charge products
         charge_products = numpy.tile(self.q, (self.N, 1)) * numpy.tile(self.q, (self.N, 1)).T
         
         # calculate potential
-        coulomb_pot = MDBox.K_E * charge_products / numpy.sqrt(dist_sq)
-        # ===== End: Coulomb potential
+        potential += MDBox.K_E * charge_products / numpy.sqrt(dist_sq)
+        # ===== End: Coulomb potential =====
         
-        return 0.5 * numpy.sum(lennard_pot + coulomb_pot)
+        # ===== Start: Restraint potential =====
+        if self.r1 >= 0 and self.r2 >= 0 and self.r0 < numpy.inf:
+            restraint_dist = numpy.sqrt(dist_sq[self.r1, self.r2])
+            restraint_pot = 0.5 * MDBox.K_R * (restraint_dist - self.r0)**2
+            potential[self.r1, self.r2] += restraint_pot
+            potential[self.r2, self.r1] += restraint_pot
+        # ===== End: Restraint potential =====
+        
+        return 0.5 * numpy.sum(potential)
     
     # ========== End: SD Minimization ==========
     
