@@ -335,14 +335,21 @@ class MDBox:
     # ========== Start: Evaluation ==========
     
     def __init_evaluation(self, steps):
-        self.Epot = numpy.zeros(steps + 1)
-        self.Ekin = numpy.zeros(steps + 1)
+        #self.Epot = numpy.zeros(steps + 1)
+        #self.Ekin = numpy.zeros(steps + 1)
+        if self.r1 >= 0 and self.r2 >= 0 and self.r0 < numpy.inf:
+            self.restraint_distance = numpy.zeros(steps + 1)
         
         self.__evaluate_step(-1)
     
     def __evaluate_step(self, step):
-        self.Epot[step + 1] = self.__calculate_potential_energy()
-        self.Ekin[step + 1] = 0.5 * 1e-6 * numpy.sum(self.m * (self.xvel**2 + self.yvel**2))
+        #self.Epot[step + 1] = self.__calculate_potential_energy()
+        #self.Ekin[step + 1] = 0.5 * 1e-6 * numpy.sum(self.m * (self.xvel**2 + self.yvel**2))
+        if self.r1 >= 0 and self.r2 >= 0 and self.r0 < numpy.inf:
+            xdist = numpy.amin(numpy.abs(numpy.tile(self.xpos[self.r1] - self.xpos[self.r2], 3) + numpy.array([0, self.xsize, -self.xsize])))
+            ydist = numpy.amin(numpy.abs(numpy.tile(self.ypos[self.r1] - self.ypos[self.r2], 3) + numpy.array([0, self.ysize, -self.ysize])))
+            
+            self.restraint_distance[step + 1] = numpy.sqrt(xdist**2 + ydist**2)
     
     # ========== End: Evaluation ==========
     
