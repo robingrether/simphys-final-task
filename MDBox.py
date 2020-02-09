@@ -58,7 +58,7 @@ class MDBox:
                 i += 1
         
         # assign velocities according to Maxwell-Boltzmann distribution with random direction
-        vel = scipy.stats.chi.rvs(2, scale=numpy.sqrt(MDBox.R * T / m), size=N)
+        vel = scipy.stats.chi.rvs(2, scale=numpy.sqrt(m / (MDBox.R * T)), size=N)
         angles = numpy.random.random(size=N) * 2 * numpy.pi
         self.xvel = vel * numpy.cos(angles)
         self.yvel = vel * numpy.sin(angles)
