@@ -245,7 +245,7 @@ class MDBox:
     
     # ========== Start: SD Minimization ==========
     
-    def minimize_potential(self, dr=0.05, max_steps=1e3):
+    def minimize_potential(self, dr=0.05, max_steps=1000):
         # calculate initial potential
         Epot = self.__calculate_potential_energy()
         
@@ -253,10 +253,9 @@ class MDBox:
         xforce, yforce = self.__calculate_force_vectors()
         
         # set step counter
-        total_steps = 0
         dir_steps = 0
         
-        while total_steps < max_steps:
+        for total_steps in tqdm(range(max_steps)):
             # build unit vectors
             force_abs = numpy.sqrt(xforce**2 + yforce**2)
             xunit = xforce / force_abs
@@ -266,7 +265,9 @@ class MDBox:
             self.xpos += xunit * dr
             self.ypos += yunit * dr
             
-            total_steps += 1
+            # periodic box condition
+            self.xpos %= self.xsize
+            self.ypos %= self.ysize
             
             # calculate potential
             Epot_new = self.__calculate_potential_energy()
@@ -287,6 +288,10 @@ class MDBox:
                 # break if the last direction did not bring any successful steps
                 self.xpos -= xunit * dr
                 self.ypos -= yunit * dr
+                
+                # periodic box condition
+                self.xpos %= self.xsize
+                self.ypos %= self.ysize
                 break
         
         return total_steps
