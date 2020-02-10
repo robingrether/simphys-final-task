@@ -355,6 +355,27 @@ class MDBox:
     
     # ========== Other functions ==========
     
+    def render_image(self, styles=[["bo", 5.0, -1]]):
+        """Render an image from the current particle positions.
+        Styles: list of elements [format string, marker size, number of trajectories (-1 => all remaining)]"""
+        fig, ax = pyplot.subplots(figsize=(10, 10))
+        
+        ax.set_xlim([0, self.xsize])
+        ax.set_ylim([0, self.ysize])
+        
+        ax.set_xlabel("position x")
+        ax.set_ylabel("position y")
+        
+        j = 0
+        for i in range(len(styles)):
+            if styles[i][2] <= 0:
+                ax.plot(self.xpos[j:], self.ypos[j:], styles[i][0], ms=styles[i][1])
+                break
+            ax.plot(self.xpos[j:(j+styles[i][2])], self.ypos[j:(j+styles[i][2])], styles[i][0], ms=styles[i][1])
+            j += styles[i][2]
+        
+        pyplot.show()
+    
     def render_video(self, styles=[["bo", 5.0, -1]], time_interval=20, frame_interval=1):
         """Render a video from the trajectory.
         Styles: list of elements [format string, marker size, number of trajectories (-1 => all remaining)]"""
